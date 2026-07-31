@@ -1,116 +1,251 @@
-import os
-import re
-import joblib
-import numpy as np
 import gradio as gr
-from groq import Groq
+import joblib
+import re
+import nltk
 from nltk.tokenize import word_tokenize
 from nltk.corpus import stopwords
 from Sastrawi.Stemmer.StemmerFactory import StemmerFactory
-import nltk
+from groq import Groq
+import os
 
-# Download NLTK data saat aplikasi pertama kali dijalankan di server
-nltk.download('punkt')
-nltk.download('stopwords')
-nltk.download('punkt_tab')
+# Download NLTK data
+nltk.download('punkt', quiet=True)
+nltk.download('stopwords', quiet=True)
+nltk.download('punkt_tab', quiet=True)
 
-# ===== 1. MUAT MODEL DARI FOLDER =====
-# Di Hugging Face, file .pkl harus berada di folder yang sama dengan app.py
-model_svm = joblib.load('model_svm_best.pkl')
-tfidf_vectorizer = joblib.load('tfidf_vectorizer.pkl')
+# Load model dan vectorizer
+model_svm = joblib.load('models/model_svm_best.pkl')
+tfidf_vectorizer = joblib.load('models/tfidf_vectorizer.pkl')
 
-# ===== 2. SETUP GROQ API =====
-# API Key akan diambil dari "Secrets" di pengaturan Hugging Face Space
+# Setup Groq API
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 client_groq = Groq(api_key=GROQ_API_KEY)
 
-# ===== 3. KAMUS & PREPROCESSING =====
+# Kamus normalisasi lengkap (217 kata)
 KAMUS_NORMALISASI = {
-    'gak': 'tidak', 'ga': 'tidak', 'nggak': 'tidak', 'enggak': 'tidak',
-    'udah': 'sudah', 'yg': 'yang', 'dgn': 'dengan', 'utk': 'untuk',
-    'dr': 'dari', 'krn': 'karena', 'bgt': 'sangat', 'banget': 'sangat',
-    'lemot': 'lambat', 'lelet': 'lambat', 'mantap': 'bagus', 'mantul': 'bagus',
-    'ngelag': 'lambat', 'lag': 'lambat', 'ribet': 'rumit', 'app': 'aplikasi'
+    # === KATA NEGASI & MODAL ===
+    'gk': 'tidak', 'nggak': 'tidak', 'gak': 'tidak', 'ga': 'tidak', 'tdk': 'tidak',
+    'blm': 'belum', 'blum': 'belum', 'udh': 'sudah', 'sda': 'sudah', 'sdh': 'sudah',
+    'dah': 'sudah', 'deh': 'sudah',
+    'syg': 'sayang', 'aq': 'saya', 'aku': 'saya', 'gue': 'saya', 'gw': 'saya',
+    'elo': 'kamu', 'lu': 'kamu', 'km': 'kamu', 'anda': 'anda',
+    'yg': 'yang', 'dgn': 'dengan', 'utk': 'untuk', 'thd': 'terhadap',
+    'dr': 'dari', 'krn': 'karena', 'karna': 'karena', 'spy': 'supaya',
+    'biar': 'agar', 'klo': 'kalau', 'klu': 'kalau', 'kalo': 'kalau', 'kl': 'kalau',
+    'dlm': 'dalam', 'ttg': 'tentang', 'ttng': 'tentang', 'slh': 'salah',
+    'bgt': 'sangat', 'banget': 'sangat', 'sekali': 'sangat', 'bnget': 'sangat',
+    
+    # === KATA SIFAT POSITIF ===
+    'bagus': 'bagus', 'baik': 'bagus', 'mantap': 'bagus', 'mantul': 'bagus',
+    'keren': 'bagus', 'top': 'bagus', 'joss': 'bagus', 'ok': 'bagus', 'oke': 'bagus',
+    'sip': 'bagus', 'good': 'bagus', 'great': 'bagus', 'nice': 'bagus',
+    'puas': 'puas', 'senang': 'senang', 'seneng': 'senang', 'happy': 'senang',
+    'mudah': 'mudah', 'gampang': 'mudah', 'simple': 'mudah', 'simpel': 'mudah',
+    'cepat': 'cepat', 'cepet': 'cepat', 'fast': 'cepat', 'quick': 'cepat',
+    'efisien': 'efisien', 'praktis': 'praktis', 'nyaman': 'nyaman',
+    'membantu': 'bantu', 'helpful': 'bantu', 'berguna': 'bantu',
+    'lengkap': 'lengkap', 'komplit': 'lengkap',
+    
+    # === KATA SIFAT NEGATIF ===
+    'jelek': 'jelek', 'buruk': 'jelek', 'bad': 'jelek', 'worst': 'jelek',
+    'parah': 'parah', 'teruk': 'parah', 'horrible': 'parah',
+    'error': 'error', 'rusak': 'error', 'broken': 'error',
+    'lemot': 'lambat', 'lelet': 'lambat', 'slow': 'lambat', 'lamban': 'lambat',
+    'bingung': 'bingung', 'confused': 'bingung', 'membingungkan': 'bingung',
+    'susah': 'sulit', 'sulit': 'sulit', 'ribet': 'sulit', 'difficult': 'sulit',
+    'kesal': 'kesal', 'sebal': 'kesal', 'annoyed': 'kesal',
+    'ganggu': 'ganggu', 'mengganggu': 'ganggu', 'annoying': 'ganggu',
+    'crash': 'error', 'force close': 'error', 'fc': 'error',
+    'ngelag': 'lambat', 'lag': 'lambat', 'laggy': 'lambat',
+    'hang': 'error', 'freeze': 'error', 'not responding': 'error',
+    'bug': 'error', 'buggy': 'error', 'glitch': 'error',
+    'confusing': 'bingung', 'membingungkan': 'bingung',
+    'complicated': 'rumit', 'complex': 'rumit',
+    
+    # === ISTILAH APLIKASI & LAYANAN ===
+    'aplikasi': 'aplikasi', 'app': 'aplikasi', 'apps': 'aplikasi',
+    'sim': 'sim', 'stnk': 'stnk', 'skck': 'skck', 'etle': 'etle',
+    'tilang': 'tilang', 'e-tilang': 'tilang', 'etilang': 'tilang',
+    'polri': 'polri', 'polisi': 'polisi', 'kepolisian': 'polisi',
+    'pengaduan': 'aduan', 'adu': 'aduan', 'complain': 'aduan',
+    'complaint': 'aduan', 'lapor': 'lapor', 'report': 'lapor',
+    'layanan': 'layanan', 'service': 'layanan', 'pelayanan': 'layanan',
+    'fitur': 'fitur', 'feature': 'fitur',
+    'menu': 'menu', 'tombol': 'tombol', 'button': 'tombol',
+    'halaman': 'halaman', 'page': 'halaman', 'tampilan': 'tampilan',
+    'interface': 'tampilan', 'ui': 'tampilan', 'ux': 'tampilan',
+    
+    # === KATA KERJA ===
+    'bisa': 'bisa', 'dapat': 'bisa', 'can': 'bisa',
+    'tidak bisa': 'tidak bisa', 'gabisa': 'tidak bisa', 'gk bisa': 'tidak bisa',
+    'pake': 'guna', 'pakai': 'guna', 'gunakan': 'guna',
+    'download': 'unduh', 'unduh': 'unduh', 'install': 'instal',
+    'update': 'perbarui', 'perbarui': 'perbarui', 'upgrade': 'perbarui',
+    'login': 'masuk', 'masuk': 'masuk', 'sign in': 'masuk',
+    'logout': 'keluar', 'keluar': 'keluar', 'sign out': 'keluar',
+    'register': 'daftar', 'daftar': 'daftar', 'sign up': 'daftar',
+    'verifikasi': 'verifikasi', 'verify': 'verifikasi',
+    'upload': 'unggah', 'unggah': 'unggah', 'submit': 'kirim',
+    'kirim': 'kirim', 'submit': 'kirim',
+    'buka': 'buka', 'open': 'buka',
+    'tutup': 'tutup', 'close': 'tutup',
+    'cari': 'cari', 'search': 'cari',
+    'pilih': 'pilih', 'select': 'pilih',
+    'klik': 'klik', 'click': 'klik', 'tap': 'klik',
 }
-KATA_NEGASI = {'tidak', 'tak', 'bukan', 'belum', 'tanpa', 'jangan', 'tiada', 'kurang'}
-stopwords_id = set(stopwords.words('indonesian')) - KATA_NEGASI
-stemmer = StemmerFactory().create_stemmer()
 
-def preprocessing(teks):
-    if not isinstance(teks, str): return ""
-    teks = teks.lower()
-    teks = re.sub(r'http\S+|www\S+|@\w+|#\w+|\d+|[^\w\s]', ' ', teks)
-    teks = re.sub(r'\s+', ' ', teks).strip()
-    kata = [KAMUS_NORMALISASI.get(k, k) for k in teks.split()]
-    tokens = word_tokenize(' '.join(kata))
-    tokens = [t for t in tokens if t not in stopwords_id]
-    tokens_stemmed = [t if t in KATA_NEGASI else stemmer.stem(t) for t in tokens]
-    return ' '.join(tokens_stemmed)
+# Fungsi preprocessing lengkap
+def preprocess_text(text):
+    if not isinstance(text, str):
+        return ""
+    
+    # Case folding
+    text = text.lower()
+    
+    # Cleaning
+    text = re.sub(r'http\S+|www\S+|@\S+|#\S+', ' ', text)
+    text = re.sub(r'[^\w\s]', ' ', text)
+    text = re.sub(r'\d+', ' ', text)
+    text = re.sub(r'\s+', ' ', text).strip()
+    
+    # Normalisasi
+    words = text.split()
+    normalized_words = [KAMUS_NORMALISASI.get(word, word) for word in words]
+    text = ' '.join(normalized_words)
+    
+    # Tokenisasi
+    tokens = word_tokenize(text)
+    
+    # Hapus stopwords (kecuali kata negasi)
+    stop_words = set(stopwords.words('indonesian'))
+    negation_words = {'tidak', 'tidak', 'bukan', 'belum', 'jangan', 'jangan'}
+    tokens = [word for word in tokens if word not in stop_words or word in negation_words]
+    
+    # Stemming
+    stemmer = StemmerFactory().create_stemmer()
+    stemmed_tokens = [stemmer.stem(word) for word in tokens]
+    
+    return ' '.join(stemmed_tokens)
 
-# ===== 4. FUNGSI AI INSIGHT =====
+# Fungsi prediksi sentimen
+def predict_sentiment(text):
+    if not text.strip():
+        return "⚠️ Silakan masukkan teks ulasan terlebih dahulu."
+    
+    # Preprocessing
+    cleaned_text = preprocess_text(text)
+    
+    # Ekstraksi fitur
+    features = tfidf_vectorizer.transform([cleaned_text])
+    
+    # Prediksi
+    prediction = model_svm.predict(features)[0]
+    probabilities = model_svm.predict_proba(features)[0]
+    confidence = max(probabilities) * 100
+    
+    # Mapping label
+    label_map = {0: 'Negatif', 1: 'Netral', 2: 'Positif'}
+    sentiment_label = label_map.get(prediction, 'Tidak Diketahui')
+    
+    # Generate AI Insight
+    ai_insight = generate_ai_insight(text, sentiment_label, confidence)
+    
+    return f"""
+## 📊 Hasil Klasifikasi Sentimen
+
+**Teks Asli:**
+> {text}
+
+**Teks Setelah Preprocessing:**
+> {cleaned_text}
+
+---
+
+### 🎯 Prediksi Sentimen: **{sentiment_label}**
+**Tingkat Keyakinan:** {confidence:.2f}%
+
+---
+
+{ai_insight}
+"""
+
+# Fungsi AI Insight dengan Groq
 def generate_ai_insight(teks_asli, prediksi, confidence):
     prompt = f"""Anda adalah analis sentimen profesional untuk aplikasi Super App Presisi Polri.
-    ULASAN PENGGUNA: "{teks_asli}"
-    HASIL KLASIFIKASI: Sentimen {prediksi.upper()} (Keyakinan {confidence:.2f}%)
-    TUGAS: Berikan analisis singkat (3-5 kalimat) berisi:
-    1. Analisis Konteks
-    2. Rekomendasi untuk Pengembang
-    3. Tingkat Prioritas (1-5)
-    Gunakan bahasa Indonesia yang profesional."""
+
+ULASAN PENGGUNA: "{teks_asli}"
+HASIL KLASIFIKASI: Sentimen {prediksi.upper()} (Keyakinan {confidence:.2f}%)
+
+TUGAS: Berikan analisis singkat (3-5 kalimat) berisi:
+1. Analisis Konteks
+2. Rekomendasi untuk Pengembang
+3. Tingkat Prioritas (1-5)
+
+Gunakan bahasa Indonesia yang profesional."""
     
     try:
         completion = client_groq.chat.completions.create(
             model="llama-3.3-70b-versatile",
-            messages=[{"role": "system", "content": "Anda adalah analis sentimen profesional."},
-                      {"role": "user", "content": prompt}],
-            temperature=0.7, max_tokens=500
+            messages=[
+                {"role": "system", "content": "Anda adalah analis sentimen profesional."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7,
+            max_tokens=500
         )
-        return completion.choices[0].message.content
+        return f"""### 🤖 AI Insight (Groq LLaMA 3.3)
+
+{completion.choices[0].message.content}
+"""
     except Exception as e:
-        return f"⚠️ Gagal memuat AI Insight. Periksa API Key Groq di Secrets. Error: {str(e)}"
+        return f"""### ⚠️ AI Insight Tidak Tersedia
 
-# ===== 5. FUNGSI UTAMA GRADIO =====
-def prediksi_dengan_insight(teks_ulasan):
-    if not teks_ulasan or len(teks_ulasan.strip()) == 0:
-        return "⚠️ Silakan masukkan teks ulasan terlebih dahulu!"
-    
-    teks_bersih = preprocessing(teks_ulasan)
-    vektor = tfidf_vectorizer.transform([teks_bersih])
-    pred = model_svm.predict(vektor)[0]
-    
-    distances = model_svm.decision_function(vektor)[0]
-    max_distance = max(abs(distances))
-    confidence = 1 / (1 + np.exp(-max_distance)) * 100
-    
-    emoji_map = {'positif': '😊 POSITIF', 'netral': '😐 NETRAL', 'negatif': '😠 NEGATIF'}
-    insight = generate_ai_insight(teks_ulasan, pred, confidence)
-    
-    return f"""
-    ### 📊 Klasifikasi Model (SVM + Grid Search)
-    | Informasi | Detail |
-    |---|---|
-    | **Teks Asli** | "{teks_ulasan}" |
-    | **Prediksi Sentimen** | **{emoji_map[pred]}** |
-    | **Tingkat Keyakinan** | {confidence:.2f}% |
+Gagal memuat AI Insight. Periksa API Key Groq di Secrets.
 
-    ---
-    ###  AI Insight (Powered by Groq - LLaMA 3.3 70B)
-    {insight}
-    """
+**Error:** {str(e)}
+"""
 
-# ===== 6. JALANKAN INTERFACE =====
+# Interface Gradio
 iface = gr.Interface(
-    fn=prediksi_dengan_insight,
-    inputs=gr.Textbox(lines=4, label="📝 Teks Ulasan"),
+    fn=predict_sentiment,
+    inputs=gr.Textbox(
+        lines=5,
+        placeholder="Masukkan ulasan pengguna aplikasi Super App Presisi Polri...",
+        label="📝 Ulasan Pengguna"
+    ),
     outputs=gr.Markdown(label="📊 Hasil Analisis"),
-    title="🚔 Sistem Analisis Sentimen Super App Presisi Polri",
-    description="Model: SVM + Grid Search | AI: Groq Cloud (LLaMA 3.3)",
+    title="🚔 Analisis Sentimen Super App Presisi Polri",
+    description="""
+Sistem analisis sentimen berbasis **Support Vector Machine (SVM)** dengan optimasi **Grid Search** 
+dan **AI Insight** menggunakan **Groq LLaMA 3.3 70B**.
+
+**Fitur:**
+- Klasifikasi 3 kelas: Positif, Netral, Negatif
+- Preprocessing teks lengkap dengan 217 kata normalisasi
+- AI Insight kontekstual dari Groq AI
+- Tingkat keyakinan prediksi
+
+**Dikembangkan oleh:** Carel Alberto Karma  
+**Dataset:** Ulasan Google Play Store (2025–2026)
+""",
     examples=[
-        ["Aplikasinya sangat bagus, perpanjangan SIM jadi lebih mudah!"],
-        ["Sering error dan lemot, tidak bisa dibuka sama sekali."],
-        ["Bagaimana cara perpanjang STNK di aplikasi ini?"]
-    ]
+        ["Aplikasinya sangat bagus, perpanjangan SIM jadi lebih mudah dan cepat!"],
+        ["Sering error dan lemot, tidak bisa dibuka sama sekali saat mau bayar STNK."],
+        ["Bagaimana cara perpanjang STNK di aplikasi ini? Masih bingung menu nya."],
+        ["Fitur pengaduan masyarakat sangat membantu, tapi loadingnya agak lama."],
+        ["Aplikasi crash terus, sudah coba install ulang tetap sama. Kecewa banget!"],
+        ["Lumayan bagus tapi kadang ngelag saat upload foto SKCK."],
+        ["Menu untuk cek tilang ETLE ada di mana ya? Tidak ketemu."]
+    ],
+    theme=gr.themes.Soft(),
+    allow_flagging="never"
 )
 
+# Launch aplikasi
 if __name__ == "__main__":
-    iface.launch()
+    iface.launch(
+        server_name="0.0.0.0",
+        server_port=7860,
+        share=False,
+        show_error=True
+    )
