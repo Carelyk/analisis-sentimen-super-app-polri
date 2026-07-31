@@ -213,7 +213,7 @@ iface = gr.Interface(
         placeholder="Masukkan ulasan pengguna aplikasi Super App Presisi Polri...",
         label="📝 Ulasan Pengguna"
     ),
-    outputs=gr.Markdown(label="📊 Hasil Analisis"),
+    outputs=gr.Markdown(label=" Hasil Analisis"),
     title="🚔 Analisis Sentimen Super App Presisi Polri",
     description="""
 Sistem analisis sentimen berbasis **Support Vector Machine (SVM)** dengan optimasi **Grid Search** 
@@ -237,8 +237,8 @@ dan **AI Insight** menggunakan **Groq LLaMA 3.3 70B**.
         ["Lumayan bagus tapi kadang ngelag saat upload foto SKCK."],
         ["Menu untuk cek tilang ETLE ada di mana ya? Tidak ketemu."]
     ],
-    theme=gr.themes.Soft(),
-    allow_flagging="never"
+    theme=gr.themes.Soft()
+    # allow_flagging="never"  <-- BARIS INI SUDAH DIHAPUS
 )
 
 # Launch aplikasi
