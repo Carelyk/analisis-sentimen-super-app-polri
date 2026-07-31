@@ -14,8 +14,8 @@ nltk.download('stopwords', quiet=True)
 nltk.download('punkt_tab', quiet=True)
 
 # Load model dan vectorizer
-model_svm = joblib.load('models/model_svm_best.pkl')
-tfidf_vectorizer = joblib.load('models/tfidf_vectorizer.pkl')
+model_svm = joblib.load('model_svm_best.pkl')
+tfidf_vectorizer = joblib.load('tfidf_vectorizer.pkl')
 
 # Setup Groq API
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
