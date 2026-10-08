@@ -1,0 +1,25 @@
+# Artefak model
+*.pkl
+*.joblib
+
+# Kredensial & rahasia
+.env
+.secrets/
+secrets.toml
+*.pem
+*.key
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Editor & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

@@ -1,7 +1,0 @@
-gradio
-scikit-learn
-groq
-pysastrawi
-nltk
-joblib
-numpy
